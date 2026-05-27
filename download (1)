@@ -1,0 +1,24 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hls-backend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend/videos:/app/videos
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hls-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_HLS_URL=http://localhost:3000/stream/index.m3u8
+    depends_on:
+      - backend
+    restart: unless-stopped
