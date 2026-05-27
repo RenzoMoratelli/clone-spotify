@@ -1,6 +1,0 @@
-node_modules
-npm-debug.log
-videos/source/*.mp4
-videos/hls/*
-!videos/source/.gitkeep
-!videos/hls/.gitkeep
