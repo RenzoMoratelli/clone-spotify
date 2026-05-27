@@ -1,119 +1,135 @@
 import express from 'express';
 import cors from 'cors';
+import { createReadStream, existsSync, statSync } from 'fs';
+import { join, extname } from 'path';
+import { fileURLToPath } from 'url';
 import { pool } from './db.js';
 
+const __dirname = join(fileURLToPath(import.meta.url), '../..');
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
 const allowedOrigins = (process.env.CORS_ORIGIN || '')
-  .split(',')
-  .map((item) => item.trim())
-  .filter(Boolean);
+  .split(',').map((s) => s.trim()).filter(Boolean);
 
 app.use(cors({
-  origin(origin, callback) {
-    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(new Error('Origin não permitida pelo CORS'));
+  origin(origin, cb) {
+    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin))
+      return cb(null, true);
+    return cb(new Error('Origin não permitida pelo CORS'));
   }
 }));
 
 app.use(express.json());
 
+// ─── Health ──────────────────────────────────────────────────────────────────
 app.get('/health', async (_req, res) => {
   try {
     const [rows] = await pool.query('SELECT 1 AS ok');
     res.json({ status: 'ok', database: rows[0]?.ok === 1 ? 'connected' : 'unknown' });
-  } catch (error) {
-    res.status(500).json({ status: 'error', message: error.message });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
   }
 });
 
-app.get('/products', async (_req, res) => {
+// ─── HLS Streaming ────────────────────────────────────────────────────────────
+// Serve HLS manifest and segments
+// PUT audio files in: backend/audio/hls/<track-slug>/index.m3u8 + *.ts
+app.get('/stream/:slug/index.m3u8', (req, res) => {
+  const { slug } = req.params;
+  const filePath = join(__dirname, 'audio', 'hls', slug, 'index.m3u8');
+
+  if (!existsSync(filePath)) {
+    return res.status(404).json({ message: `HLS stream '${slug}' não encontrado` });
+  }
+
+  res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+  res.setHeader('Cache-Control', 'no-cache');
+  createReadStream(filePath).pipe(res);
+});
+
+app.get('/stream/:slug/:segment', (req, res) => {
+  const { slug, segment } = req.params;
+  if (extname(segment) !== '.ts') return res.status(400).end();
+
+  const filePath = join(__dirname, 'audio', 'hls', slug, segment);
+  if (!existsSync(filePath)) return res.status(404).end();
+
+  const stat = statSync(filePath);
+  res.setHeader('Content-Type', 'video/MP2T');
+  res.setHeader('Content-Length', stat.size);
+  createReadStream(filePath).pipe(res);
+});
+
+// ─── Tracks CRUD ─────────────────────────────────────────────────────────────
+app.get('/tracks', async (_req, res) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM products ORDER BY id DESC');
+    const [rows] = await pool.query('SELECT * FROM tracks ORDER BY id DESC');
     res.json(rows);
-  } catch (error) {
-    res.status(500).json({ message: 'Erro ao listar produtos', error: error.message });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao listar faixas', error: err.message });
   }
 });
 
-app.get('/products/:id', async (req, res) => {
+app.get('/tracks/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const [rows] = await pool.query('SELECT * FROM products WHERE id = ?', [id]);
-
-    if (rows.length === 0) {
-      return res.status(404).json({ message: 'Produto não encontrado' });
-    }
-
-    return res.json(rows[0]);
-  } catch (error) {
-    return res.status(500).json({ message: 'Erro ao buscar produto', error: error.message });
+    const [rows] = await pool.query('SELECT * FROM tracks WHERE id = ?', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ message: 'Faixa não encontrada' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao buscar faixa', error: err.message });
   }
 });
 
-app.post('/products', async (req, res) => {
+app.post('/tracks', async (req, res) => {
   try {
-    const { name, price, description } = req.body;
-
-    if (!name || price === undefined || price === null || Number.isNaN(Number(price))) {
-      return res.status(400).json({ message: 'Campos name e price são obrigatórios' });
-    }
+    const { title, artist, album, duration, cover, color, hls_slug } = req.body;
+    if (!title || !artist) return res.status(400).json({ message: 'title e artist são obrigatórios' });
 
     const [result] = await pool.query(
-      'INSERT INTO products (name, price, description) VALUES (?, ?, ?)',
-      [name, Number(price), description || null]
+      'INSERT INTO tracks (title, artist, album, duration, cover, color, hls_slug) VALUES (?,?,?,?,?,?,?)',
+      [title, artist, album || null, Number(duration) || 0, cover || null, color || '#1DB954', hls_slug || null]
     );
-
-    const [rows] = await pool.query('SELECT * FROM products WHERE id = ?', [result.insertId]);
-    return res.status(201).json(rows[0]);
-  } catch (error) {
-    return res.status(500).json({ message: 'Erro ao criar produto', error: error.message });
+    const [rows] = await pool.query('SELECT * FROM tracks WHERE id = ?', [result.insertId]);
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao criar faixa', error: err.message });
   }
 });
 
-app.put('/products/:id', async (req, res) => {
+app.put('/tracks/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { name, price, description } = req.body;
-
-    if (!name || price === undefined || price === null || Number.isNaN(Number(price))) {
-      return res.status(400).json({ message: 'Campos name e price são obrigatórios' });
-    }
-
+    const { title, artist, album, duration, cover, color, hls_slug } = req.body;
     const [result] = await pool.query(
-      'UPDATE products SET name = ?, price = ?, description = ? WHERE id = ?',
-      [name, Number(price), description || null, id]
+      'UPDATE tracks SET title=?, artist=?, album=?, duration=?, cover=?, color=?, hls_slug=? WHERE id=?',
+      [title, artist, album || null, Number(duration) || 0, cover || null, color || '#1DB954', hls_slug || null, req.params.id]
     );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Produto não encontrado' });
-    }
-
-    const [rows] = await pool.query('SELECT * FROM products WHERE id = ?', [id]);
-    return res.json(rows[0]);
-  } catch (error) {
-    return res.status(500).json({ message: 'Erro ao atualizar produto', error: error.message });
+    if (!result.affectedRows) return res.status(404).json({ message: 'Faixa não encontrada' });
+    const [rows] = await pool.query('SELECT * FROM tracks WHERE id = ?', [req.params.id]);
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao atualizar faixa', error: err.message });
   }
 });
 
-app.delete('/products/:id', async (req, res) => {
+app.delete('/tracks/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const [result] = await pool.query('DELETE FROM products WHERE id = ?', [id]);
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'Produto não encontrado' });
-    }
-
-    return res.json({ message: 'Produto removido com sucesso' });
-  } catch (error) {
-    return res.status(500).json({ message: 'Erro ao remover produto', error: error.message });
+    const [result] = await pool.query('DELETE FROM tracks WHERE id = ?', [req.params.id]);
+    if (!result.affectedRows) return res.status(404).json({ message: 'Faixa não encontrada' });
+    res.json({ message: 'Faixa removida com sucesso' });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao remover faixa', error: err.message });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`API rodando em http://localhost:${PORT}`);
+// ─── Playlists ────────────────────────────────────────────────────────────────
+app.get('/playlists', async (_req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM playlists ORDER BY id DESC');
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao listar playlists', error: err.message });
+  }
 });
+
+app.listen(PORT, () => console.log(`API rodando em http://localhost:${PORT}`));
