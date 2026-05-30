@@ -1,77 +1,33 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import './spotify.css';
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-const FEATURED = [
-  {
-    id: 1,
-    title: 'Neon Horizons',
-    artist: 'Synthwave Collective',
-    album: 'Neon Horizons',
-    duration: 214,
-    cover: 'https://picsum.photos/seed/neon/400/400',
-    color: '#1DB954',
-    hlsUrl: null,
-  },
-  {
-    id: 2,
-    title: 'Midnight Drive',
-    artist: 'The Wanderers',
-    album: 'Late Night Tapes',
-    duration: 187,
-    cover: 'https://picsum.photos/seed/midnight/400/400',
-    color: '#E91E63',
-    hlsUrl: null,
-  },
-  {
-    id: 3,
-    title: 'Solar Flare',
-    artist: 'Astral Project',
-    album: 'Orbit',
-    duration: 253,
-    cover: 'https://picsum.photos/seed/solar/400/400',
-    color: '#FF9800',
-    hlsUrl: null,
-  },
-  {
-    id: 4,
-    title: 'Ocean Floor',
-    artist: 'Deep Current',
-    album: 'Submerge',
-    duration: 198,
-    cover: 'https://picsum.photos/seed/ocean/400/400',
-    color: '#2196F3',
-    hlsUrl: null,
-  },
-  {
-    id: 5,
-    title: 'City Lights',
-    artist: 'Urban Echo',
-    album: 'Concrete Jungle',
-    duration: 221,
-    cover: 'https://picsum.photos/seed/city/400/400',
-    color: '#9C27B0',
-    hlsUrl: null,
-  },
-  {
-    id: 6,
-    title: 'Fire Season',
-    artist: 'Emberfield',
-    album: 'Summer Burns',
-    duration: 176,
-    cover: 'https://picsum.photos/seed/fire/400/400',
-    color: '#FF5722',
-    hlsUrl: null,
-  },
-];
+// API
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-const PLAYLISTS = [
-  { id: 'p1', name: 'Chill Vibes', cover: 'https://picsum.photos/seed/chill/200/200', tracks: [1, 3, 5] },
-  { id: 'p2', name: 'Late Night Drive', cover: 'https://picsum.photos/seed/latenight/200/200', tracks: [2, 4, 6] },
-  { id: 'p3', name: 'Morning Energy', cover: 'https://picsum.photos/seed/morning/200/200', tracks: [1, 2, 3, 4] },
-  { id: 'p4', name: 'Focus Mode', cover: 'https://picsum.photos/seed/focus/200/200', tracks: [3, 5, 6] },
-];
+async function apiFetch(path, options = {}) {
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    cache: 'no-store',
+    ...options,
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+function normaliseTrack(t) {
+  return {
+    id: t.id,
+    title: t.title,
+    artist: t.artist,
+    album: t.album || '',
+    duration: Number(t.duration) || 0,
+    cover: t.cover || `https://picsum.photos/seed/${t.id}/400/400`,
+    color: t.color || '#1DB954',
+    hlsUrl: t.hls_slug ? `${API_URL}/stream/${t.hls_slug}/index.m3u8` : null,
+  };
+}
 
 const CATEGORIES = ['Todos', 'Música', 'Podcasts', 'Ao Vivo', 'Lançamentos'];
 
@@ -169,6 +125,7 @@ const Icon = {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function SpotifyClone() {
   const [activeNav, setActiveNav] = useState('home');
+  const [showAdmin, setShowAdmin] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -181,12 +138,58 @@ export default function SpotifyClone() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [hlsStatus, setHlsStatus] = useState('idle');
-  const [queue, setQueue] = useState([...FEATURED]);
+  const [tracks, setTracks] = useState([]);
+  const [playlists, setPlaylists] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [queue, setQueue] = useState([]);
 
   const audioRef = useRef(null);
   const hlsRef = useRef(null);
   const progressRef = useRef(null);
   const animRef = useRef(null);
+
+  // Load tracks & playlists from API
+  useEffect(() => {
+    async function load() {
+      try {
+        const [rawTracks, rawPlaylists] = await Promise.all([
+          apiFetch('/tracks'),
+          apiFetch('/playlists'),
+        ]);
+        const normalised = rawTracks.map(normaliseTrack);
+        setTracks(normalised);
+        setQueue(normalised);
+        setPlaylists(rawPlaylists);
+      } catch (e) {
+        console.error('Erro ao carregar dados da API:', e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  // Refresh tracks from API (called after add/delete)
+  const refreshTracks = useCallback(async () => {
+    try {
+      const raw = await apiFetch('/tracks');
+      const normalised = raw.map(normaliseTrack);
+      setTracks(normalised);
+      setQueue(normalised);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  const refreshPlaylists = useCallback(async () => {
+    try {
+      const raw = await apiFetch('/playlists');
+      setPlaylists(raw);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
 
   // ─── HLS Player logic ────────────────────────────────────────────────────
   const loadHlsTrack = useCallback((track) => {
@@ -246,7 +249,7 @@ export default function SpotifyClone() {
 
   const togglePlay = useCallback(() => {
     if (!currentTrack) {
-      playTrack(FEATURED[0]);
+      playTrack(tracks[0]);
       return;
     }
     if (currentTrack.hlsUrl && audioRef.current) {
@@ -353,16 +356,32 @@ export default function SpotifyClone() {
     });
   };
 
-  const filtered = FEATURED.filter(
+  const filtered = tracks.filter(
     (t) =>
       t.title.toLowerCase().includes(search.toLowerCase()) ||
       t.artist.toLowerCase().includes(search.toLowerCase())
   );
 
   // ─── Render ────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="loading-screen">
+        <SpotifyLogo />
+        <p>Carregando...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <audio ref={audioRef} />
+      {showAdmin && (
+        <AdminModal
+          onClose={() => setShowAdmin(false)}
+          onRefreshTracks={refreshTracks}
+          onRefreshPlaylists={refreshPlaylists}
+        />
+      )}
 
       {/* ── Sidebar ── */}
       <aside className="sidebar">
@@ -401,7 +420,7 @@ export default function SpotifyClone() {
         <div className="sidebar-divider" />
 
         <div className="sidebar-playlists">
-          {PLAYLISTS.map((pl) => (
+          {playlists.map((pl) => (
             <button key={pl.id} className="playlist-item">
               <img src={pl.cover} alt={pl.name} className="playlist-thumb" />
               <span>{pl.name}</span>
@@ -444,6 +463,7 @@ export default function SpotifyClone() {
             <button className="topbar-btn">Instalar app</button>
             <button className="topbar-btn topbar-btn--outline">Cadastrar</button>
             <button className="topbar-btn topbar-btn--filled">Entrar</button>
+            <button className="topbar-btn topbar-btn--admin" onClick={() => setShowAdmin(true)}>+ Gerenciar</button>
           </div>
         </header>
 
@@ -451,8 +471,8 @@ export default function SpotifyClone() {
         <div className="content">
           {activeNav === 'home' && (
             <HomeView
-              tracks={FEATURED}
-              playlists={PLAYLISTS}
+              tracks={tracks}
+              playlists={playlists}
               currentTrack={currentTrack}
               isPlaying={isPlaying}
               liked={liked}
@@ -475,8 +495,8 @@ export default function SpotifyClone() {
           )}
           {activeNav === 'library' && (
             <LibraryView
-              playlists={PLAYLISTS}
-              tracks={FEATURED}
+              playlists={playlists}
+              tracks={tracks}
               liked={liked}
               currentTrack={currentTrack}
               isPlaying={isPlaying}
@@ -581,7 +601,6 @@ export default function SpotifyClone() {
         </div>
       </footer>
 
-      <style>{CSS}</style>
     </div>
   );
 }
@@ -823,391 +842,164 @@ function SpotifyLogo() {
   );
 }
 
-// ─── CSS ───────────────────────────────────────────────────────────────────────
-const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Circular+Std:wght@400;500;700;900&family=DM+Sans:wght@400;500;700&display=swap');
 
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  :root {
-    --bg: #121212;
-    --surface: #181818;
-    --surface-hover: #282828;
-    --surface-active: #333333;
-    --border: #282828;
-    --text: #ffffff;
-    --text-secondary: #b3b3b3;
-    --text-dim: #727272;
-    --green: #1DB954;
-    --green-hover: #1ed760;
-    --player-h: 90px;
-    --sidebar-w: 240px;
-    --font: 'DM Sans', sans-serif;
-    --radius: 8px;
-  }
+// ─── Admin Modal ──────────────────────────────────────────────────────────────
+function AdminModal({ onClose, onRefreshTracks, onRefreshPlaylists }) {
+  const [tab, setTab] = useState('tracks');
+  const [tracks, setTracks] = useState([]);
+  const [playlists, setPlaylists] = useState([]);
+  const [msg, setMsg] = useState('');
+  const [form, setForm] = useState({ title: '', artist: '', album: '', duration: '', cover: '', color: '#1DB954', hls_slug: '' });
+  const [playlistForm, setPlaylistForm] = useState({ name: '', cover: '' });
 
-  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-  .app {
-    display: grid;
-    grid-template-columns: var(--sidebar-w) 1fr;
-    grid-template-rows: 1fr var(--player-h);
-    grid-template-areas: "sidebar main" "player player";
-    height: 100vh;
-    overflow: hidden;
+  useEffect(() => { loadAll(); }, []);
+
+  async function loadAll() {
+    try {
+      const [t, p] = await Promise.all([
+        fetch(`${API_URL}/tracks`, { cache: 'no-store' }).then(r => r.json()),
+        fetch(`${API_URL}/playlists`, { cache: 'no-store' }).then(r => r.json()),
+      ]);
+      setTracks(t);
+      setPlaylists(p);
+    } catch (e) { setMsg('Erro ao carregar dados'); }
   }
 
-  /* ── Sidebar ── */
-  .sidebar {
-    grid-area: sidebar;
-    background: #000;
-    display: flex;
-    flex-direction: column;
-    padding: 8px;
-    overflow-y: auto;
-    overflow-x: hidden;
-    scrollbar-width: thin;
-    scrollbar-color: #404040 transparent;
-    gap: 4px;
+  function handleChange(e) {
+    setForm(f => ({ ...f, [e.target.name]: e.target.value }));
   }
-  .sidebar-logo { padding: 16px 12px 8px; }
-  .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
-  .nav-item {
-    display: flex; align-items: center; gap: 12px;
-    width: 100%; padding: 10px 12px; border: none;
-    background: transparent; color: var(--text-secondary);
-    border-radius: var(--radius); cursor: pointer;
-    font-family: var(--font); font-size: 14px; font-weight: 700;
-    transition: color 0.15s, background 0.15s;
-    text-align: left;
-  }
-  .nav-item:hover { color: var(--text); }
-  .nav-item.active { color: var(--text); }
-
-  .sidebar-section { padding: 16px 0 8px; display: flex; flex-direction: column; gap: 2px; }
-  .sidebar-action {
-    display: flex; align-items: center; gap: 12px;
-    width: 100%; padding: 10px 12px; border: none;
-    background: transparent; color: var(--text-secondary);
-    cursor: pointer; font-family: var(--font); font-size: 14px; font-weight: 700;
-    transition: color 0.15s; border-radius: var(--radius);
-    text-align: left;
-  }
-  .sidebar-action:hover { color: var(--text); }
-
-  .icon-wrap {
-    width: 28px; height: 28px; border-radius: 4px;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-  }
-  .icon-wrap.green { background: var(--text); color: #000; }
-  .icon-wrap.blue { background: #4b0082; color: var(--text); }
-
-  .sidebar-divider { height: 1px; background: var(--border); margin: 8px 12px; }
-
-  .sidebar-playlists { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-  .playlist-item {
-    display: flex; align-items: center; gap: 12px;
-    width: 100%; padding: 8px 12px; border: none;
-    background: transparent; color: var(--text-secondary);
-    cursor: pointer; font-size: 13px; font-family: var(--font);
-    border-radius: var(--radius); transition: color 0.15s, background 0.15s;
-    text-align: left;
-  }
-  .playlist-item:hover { color: var(--text); background: var(--surface-hover); }
-  .playlist-thumb { width: 36px; height: 36px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
-
-  .hls-badge {
-    display: flex; align-items: center; gap: 6px;
-    padding: 8px 12px; font-size: 11px; font-weight: 700;
-    border-radius: var(--radius); margin: 8px;
-    letter-spacing: 0.05em;
-  }
-  .hls-badge.ready { background: rgba(29,185,84,.15); color: var(--green); }
-  .hls-badge.loading { background: rgba(255,152,0,.15); color: #FF9800; }
-  .hls-badge.error { background: rgba(244,67,54,.15); color: #F44336; }
-
-  /* ── Main ── */
-  .main {
-    grid-area: main;
-    display: flex; flex-direction: column;
-    overflow: hidden;
-    background: linear-gradient(180deg, #1a1a2e 0%, var(--bg) 30%);
+  function handlePlaylistChange(e) {
+    setPlaylistForm(f => ({ ...f, [e.target.name]: e.target.value }));
   }
 
-  .topbar {
-    display: flex; align-items: center; gap: 12px;
-    padding: 16px 24px; flex-shrink: 0;
-    position: relative; z-index: 10;
-  }
-  .topbar-nav { display: flex; gap: 8px; }
-  .nav-arrow {
-    width: 32px; height: 32px; border-radius: 50%;
-    background: rgba(0,0,0,.5); border: none;
-    color: var(--text); font-size: 20px; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    line-height: 1; transition: background 0.15s;
-  }
-  .nav-arrow:hover { background: rgba(255,255,255,.15); }
-
-  .search-wrap {
-    flex: 1; max-width: 360px; display: flex; align-items: center;
-    gap: 10px; background: var(--text); color: #000;
-    border-radius: 500px; padding: 8px 16px;
-  }
-  .search-wrap svg { flex-shrink: 0; opacity: 0.6; }
-  .search-input {
-    flex: 1; border: none; background: transparent; outline: none;
-    font-family: var(--font); font-size: 14px; font-weight: 500; color: #000;
+  async function addTrack(e) {
+    e.preventDefault();
+    try {
+      await fetch(`${API_URL}/tracks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, duration: Number(form.duration) }),
+      });
+      setMsg('Música adicionada!');
+      setForm({ title: '', artist: '', album: '', duration: '', cover: '', color: '#1DB954', hls_slug: '' });
+      await loadAll();
+      onRefreshTracks();
+    } catch (e) { setMsg('Erro ao adicionar música'); }
   }
 
-  .topbar-right { margin-left: auto; display: flex; gap: 8px; }
-  .topbar-btn {
-    padding: 8px 16px; border-radius: 500px; font-family: var(--font);
-    font-size: 13px; font-weight: 700; cursor: pointer; border: none;
-    background: transparent; color: var(--text-secondary);
-    transition: color 0.15s;
-  }
-  .topbar-btn:hover { color: var(--text); }
-  .topbar-btn--outline {
-    border: 1px solid #727272; color: var(--text);
-    padding: 7px 16px;
-  }
-  .topbar-btn--outline:hover { border-color: var(--text); }
-  .topbar-btn--filled { background: var(--text); color: #000; }
-  .topbar-btn--filled:hover { background: #f0f0f0; transform: scale(1.04); }
-
-  .content {
-    flex: 1; overflow-y: auto; overflow-x: hidden;
-    scrollbar-width: thin; scrollbar-color: #404040 transparent;
-  }
-  .content::-webkit-scrollbar { width: 6px; }
-  .content::-webkit-scrollbar-track { background: transparent; }
-  .content::-webkit-scrollbar-thumb { background: #404040; border-radius: 3px; }
-
-  /* ── Views ── */
-  .view { padding: 0 24px 24px; }
-  .section { margin-bottom: 32px; }
-  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-  .section-title { font-size: 22px; font-weight: 900; margin-bottom: 16px; letter-spacing: -0.3px; }
-  .section-header .section-title { margin-bottom: 0; }
-  .see-all {
-    font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
-    text-transform: uppercase; color: var(--text-secondary);
-    background: none; border: none; cursor: pointer; font-family: var(--font);
-    padding: 4px;
-  }
-  .see-all:hover { color: var(--text); text-decoration: underline; }
-
-  /* Quick grid */
-  .quick-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 8px;
-  }
-  .quick-card {
-    display: flex; align-items: center; gap: 12px;
-    background: var(--surface-hover); border: none; border-radius: var(--radius);
-    cursor: pointer; overflow: hidden; font-family: var(--font);
-    font-size: 14px; font-weight: 700; color: var(--text);
-    padding-right: 16px; position: relative;
-    transition: background 0.15s;
-  }
-  .quick-card:hover { background: var(--surface-active); }
-  .quick-card:hover .quick-play { opacity: 1; transform: translateY(0); }
-  .quick-cover { width: 56px; height: 56px; object-fit: cover; flex-shrink: 0; }
-  .quick-play {
-    position: absolute; right: 12px;
-    width: 40px; height: 40px; border-radius: 50%;
-    background: var(--green); color: #000;
-    display: flex; align-items: center; justify-content: center;
-    opacity: 0; transform: translateY(4px);
-    transition: opacity 0.2s, transform 0.2s;
-    box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+  async function deleteTrack(id) {
+    if (!confirm('Remover esta música?')) return;
+    await fetch(`${API_URL}/tracks/${id}`, { method: 'DELETE' });
+    setMsg('Música removida.');
+    await loadAll();
+    onRefreshTracks();
   }
 
-  /* Cards row */
-  .cards-row {
-    display: flex; gap: 16px; overflow-x: auto; padding-bottom: 8px;
-    scrollbar-width: none;
-  }
-  .cards-row::-webkit-scrollbar { display: none; }
-
-  .track-card {
-    flex-shrink: 0; width: 160px;
-    background: var(--surface); border-radius: var(--radius);
-    padding: 16px; cursor: pointer;
-    transition: background 0.2s;
-  }
-  .track-card:hover { background: var(--surface-hover); }
-  .track-card.current { background: var(--surface-hover); }
-  .track-card-img-wrap { position: relative; margin-bottom: 14px; }
-  .track-card-img { width: 100%; aspect-ratio: 1; border-radius: 4px; object-fit: cover; display: block; }
-  .track-card-play {
-    position: absolute; bottom: 8px; right: 8px;
-    width: 40px; height: 40px; border-radius: 50%;
-    background: var(--accent, var(--green)); color: #000;
-    border: none; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    opacity: 0; transform: translateY(8px);
-    transition: opacity 0.2s, transform 0.2s;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
-  }
-  .track-card:hover .track-card-play,
-  .track-card-play.visible { opacity: 1; transform: translateY(0); }
-  .track-card-title { display: block; font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
-  .track-card-artist { display: block; font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-  /* Categories */
-  .categories { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-  .category-pill {
-    padding: 8px 16px; border-radius: 500px;
-    background: var(--surface-hover); border: none;
-    color: var(--text); font-family: var(--font); font-size: 14px; font-weight: 500;
-    cursor: pointer; transition: background 0.15s;
-  }
-  .category-pill:hover { background: var(--surface-active); }
-  .category-pill.active { background: var(--text); color: #000; }
-
-  /* Track list */
-  .track-list { display: flex; flex-direction: column; }
-  .track-row {
-    display: grid;
-    grid-template-columns: 40px 44px 1fr 1fr 32px 56px;
-    align-items: center; gap: 12px;
-    padding: 8px 12px; border-radius: var(--radius);
-    cursor: pointer; transition: background 0.15s;
-  }
-  .track-row:hover { background: var(--surface-hover); }
-  .track-row.current { background: rgba(255,255,255,0.06); }
-  .track-row-num { display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 14px; }
-  .track-row-img { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; }
-  .track-row-info { min-width: 0; }
-  .track-row-title { display: block; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .track-row-title.green { color: var(--green); }
-  .track-row-artist { display: block; font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .track-row-album { font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .track-row-like { background: none; border: none; cursor: pointer; color: var(--text-secondary); display: flex; padding: 4px; border-radius: 4px; opacity: 0; transition: opacity 0.15s; }
-  .track-row:hover .track-row-like { opacity: 1; }
-  .track-row-like.active { opacity: 1; color: var(--green); }
-  .track-row-duration { font-size: 13px; color: var(--text-secondary); text-align: right; }
-
-  /* Equalizer animation */
-  .equalizer { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
-  .equalizer span {
-    width: 3px; background: var(--green); border-radius: 1px;
-    animation: eq 0.8s ease-in-out infinite;
-  }
-  .equalizer span:nth-child(1) { animation-delay: 0s; }
-  .equalizer span:nth-child(2) { animation-delay: 0.2s; }
-  .equalizer span:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes eq {
-    0%, 100% { height: 4px; }
-    50% { height: 16px; }
+  async function addPlaylist(e) {
+    e.preventDefault();
+    try {
+      await fetch(`${API_URL}/playlists`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(playlistForm),
+      });
+      setMsg('Playlist criada!');
+      setPlaylistForm({ name: '', cover: '' });
+      await loadAll();
+      onRefreshPlaylists();
+    } catch (e) { setMsg('Erro ao criar playlist'); }
   }
 
-  /* Library */
-  .library-filters { display: flex; gap: 8px; margin-bottom: 16px; }
-  .library-filter {
-    padding: 6px 14px; border-radius: 500px;
-    background: var(--surface-hover); border: none;
-    color: var(--text); font-family: var(--font); font-size: 13px; font-weight: 500;
-    cursor: pointer; transition: background 0.15s;
-  }
-  .library-filter:hover { background: var(--surface-active); }
-  .library-list { display: flex; flex-direction: column; gap: 4px; }
-  .library-item {
-    display: flex; align-items: center; gap: 12px;
-    padding: 8px 12px; border-radius: var(--radius);
-    transition: background 0.15s; cursor: pointer;
-  }
-  .library-item:hover { background: var(--surface-hover); }
-  .library-thumb { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
-  .library-name { display: block; font-size: 14px; font-weight: 600; }
-  .library-meta { font-size: 12px; color: var(--text-secondary); }
-  .icon-btn { background: none; border: none; cursor: pointer; color: var(--text-secondary); padding: 4px; border-radius: 4px; }
-  .icon-btn:hover { color: var(--text); }
-
-  .empty-hint { color: var(--text-secondary); font-size: 14px; padding: 20px 12px; }
-  .empty-state { display: flex; align-items: center; justify-content: center; padding: 60px 0; color: var(--text-secondary); font-size: 15px; }
-
-  /* ── Player ── */
-  .player-bar {
-    grid-area: player;
-    display: grid; grid-template-columns: 1fr 2fr 1fr;
-    align-items: center; gap: 8px;
-    background: #181818; border-top: 1px solid #282828;
-    padding: 0 16px;
-    height: var(--player-h);
+  async function deletePlaylist(id) {
+    if (!confirm('Remover esta playlist?')) return;
+    await fetch(`${API_URL}/playlists/${id}`, { method: 'DELETE' });
+    setMsg('Playlist removida.');
+    await loadAll();
+    onRefreshPlaylists();
   }
 
-  .player-track { display: flex; align-items: center; gap: 12px; min-width: 0; }
-  .player-cover { width: 56px; height: 56px; border-radius: 4px; object-fit: cover; flex-shrink: 0; transition: box-shadow 0.4s; }
-  .player-info { min-width: 0; }
-  .player-title { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .player-artist { display: block; font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .player-like { background: none; border: none; cursor: pointer; color: var(--text-secondary); flex-shrink: 0; padding: 4px; }
-  .player-empty { font-size: 13px; color: var(--text-dim); }
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h2>Gerenciar Biblioteca</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
 
-  .player-center { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-  .player-controls { display: flex; align-items: center; gap: 16px; }
+        <div className="modal-tabs">
+          <button className={tab === 'tracks' ? 'active' : ''} onClick={() => setTab('tracks')}>Músicas</button>
+          <button className={tab === 'playlists' ? 'active' : ''} onClick={() => setTab('playlists')}>Playlists</button>
+        </div>
 
-  .ctrl-btn {
-    background: none; border: none; cursor: pointer;
-    color: var(--text-secondary); padding: 4px; border-radius: 4px;
-    display: flex; align-items: center; justify-content: center;
-    transition: color 0.15s, transform 0.1s;
-  }
-  .ctrl-btn:hover { color: var(--text); transform: scale(1.06); }
-  .ctrl-btn.active { color: var(--green); }
-  .ctrl-btn.small svg { width: 18px; height: 18px; }
+        {msg && <p className="modal-msg">{msg}</p>}
 
-  .play-btn {
-    width: 36px; height: 36px; border-radius: 50%;
-    background: var(--text); color: #000; border: none;
-    cursor: pointer; display: flex; align-items: center; justify-content: center;
-    transition: transform 0.1s, background 0.15s;
-    flex-shrink: 0;
-  }
-  .play-btn:hover { transform: scale(1.06); background: #f0f0f0; }
+        {tab === 'tracks' && (
+          <div className="modal-body">
+            <form className="admin-form" onSubmit={addTrack}>
+              <h3>Adicionar Música</h3>
+              <div className="admin-form-grid">
+                <input name="title" placeholder="Título *" value={form.title} onChange={handleChange} required />
+                <input name="artist" placeholder="Artista *" value={form.artist} onChange={handleChange} required />
+                <input name="album" placeholder="Álbum" value={form.album} onChange={handleChange} />
+                <input name="duration" placeholder="Duração (segundos)" type="number" value={form.duration} onChange={handleChange} />
+                <input name="cover" placeholder="URL da capa" value={form.cover} onChange={handleChange} />
+                <input name="hls_slug" placeholder="HLS slug (ex: minha-musica)" value={form.hls_slug} onChange={handleChange} />
+                <div className="color-row">
+                  <label>Cor de destaque</label>
+                  <input name="color" type="color" value={form.color} onChange={handleChange} />
+                </div>
+              </div>
+              <button type="submit" className="admin-btn">Adicionar</button>
+            </form>
 
-  .player-progress {
-    display: flex; align-items: center; gap: 8px; width: 100%;
-  }
-  .time { font-size: 11px; color: var(--text-secondary); min-width: 36px; text-align: center; }
-  .progress-bar {
-    flex: 1; height: 4px; background: #4d4d4d; border-radius: 2px;
-    cursor: pointer; position: relative;
-    transition: height 0.1s;
-  }
-  .progress-bar:hover { height: 6px; }
-  .progress-fill { height: 100%; border-radius: 2px; transition: width 0.1s linear; pointer-events: none; }
-  .progress-thumb {
-    position: absolute; top: 50%; transform: translate(-50%, -50%);
-    width: 12px; height: 12px; border-radius: 50%;
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.15s, left 0.1s linear;
-  }
-  .progress-bar:hover .progress-thumb { opacity: 1; }
+            <h3>Músicas cadastradas ({tracks.length})</h3>
+            <div className="admin-list">
+              {tracks.map(t => (
+                <div key={t.id} className="admin-item">
+                  <img src={t.cover || `https://picsum.photos/seed/${t.id}/60/60`} alt={t.title} className="admin-thumb" />
+                  <div className="admin-item-info">
+                    <strong>{t.title}</strong>
+                    <span>{t.artist} {t.album ? `· ${t.album}` : ''}</span>
+                    {t.hls_slug && <span className="hls-tag">HLS: {t.hls_slug}</span>}
+                  </div>
+                  <button className="admin-del" onClick={() => deleteTrack(t.id)}>✕</button>
+                </div>
+              ))}
+              {tracks.length === 0 && <p className="empty-hint">Nenhuma música cadastrada.</p>}
+            </div>
+          </div>
+        )}
 
-  .player-right { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
-  .volume-wrap { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); }
-  .volume-bar {
-    width: 90px; height: 4px; background: #4d4d4d; border-radius: 2px;
-    cursor: pointer; position: relative;
-  }
-  .volume-bar:hover { height: 6px; }
-  .volume-fill { height: 100%; background: var(--text-secondary); border-radius: 2px; transition: width 0.05s; }
-  .volume-bar:hover .volume-fill { background: var(--green); }
-  .volume-thumb {
-    position: absolute; top: 50%; transform: translate(-50%, -50%);
-    width: 12px; height: 12px; border-radius: 50%; background: var(--text);
-    opacity: 0;
-  }
-  .volume-bar:hover .volume-thumb { opacity: 1; }
+        {tab === 'playlists' && (
+          <div className="modal-body">
+            <form className="admin-form" onSubmit={addPlaylist}>
+              <h3>Criar Playlist</h3>
+              <div className="admin-form-grid">
+                <input name="name" placeholder="Nome da playlist *" value={playlistForm.name} onChange={handlePlaylistChange} required />
+                <input name="cover" placeholder="URL da capa" value={playlistForm.cover} onChange={handlePlaylistChange} />
+              </div>
+              <button type="submit" className="admin-btn">Criar</button>
+            </form>
 
-  /* Scrollbar */
-  .sidebar::-webkit-scrollbar { width: 6px; }
-  .sidebar::-webkit-scrollbar-track { background: transparent; }
-  .sidebar::-webkit-scrollbar-thumb { background: #404040; border-radius: 3px; }
-`;
+            <h3>Playlists ({playlists.length})</h3>
+            <div className="admin-list">
+              {playlists.map(p => (
+                <div key={p.id} className="admin-item">
+                  <img src={p.cover || `https://picsum.photos/seed/pl${p.id}/60/60`} alt={p.name} className="admin-thumb" />
+                  <div className="admin-item-info">
+                    <strong>{p.name}</strong>
+                  </div>
+                  <button className="admin-del" onClick={() => deletePlaylist(p.id)}>✕</button>
+                </div>
+              ))}
+              {playlists.length === 0 && <p className="empty-hint">Nenhuma playlist criada.</p>}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

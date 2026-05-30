@@ -132,4 +132,29 @@ app.get('/playlists', async (_req, res) => {
   }
 });
 
+app.post('/playlists', async (req, res) => {
+  try {
+    const { name, cover } = req.body;
+    if (!name) return res.status(400).json({ message: 'name é obrigatório' });
+    const [result] = await pool.query(
+      'INSERT INTO playlists (name, cover) VALUES (?, ?)',
+      [name, cover || null]
+    );
+    const [rows] = await pool.query('SELECT * FROM playlists WHERE id = ?', [result.insertId]);
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao criar playlist', error: err.message });
+  }
+});
+
+app.delete('/playlists/:id', async (req, res) => {
+  try {
+    const [result] = await pool.query('DELETE FROM playlists WHERE id = ?', [req.params.id]);
+    if (!result.affectedRows) return res.status(404).json({ message: 'Playlist não encontrada' });
+    res.json({ message: 'Playlist removida com sucesso' });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao remover playlist', error: err.message });
+  }
+});
+
 app.listen(PORT, () => console.log(`API rodando em http://localhost:${PORT}`));
