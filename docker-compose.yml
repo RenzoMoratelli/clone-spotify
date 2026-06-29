@@ -34,6 +34,7 @@ services:
       CORS_ORIGIN: http://localhost:5173
     volumes:
       - ./backend/audio:/app/audio
+      - ./backend/src:/app/src
     depends_on:
       mysql:
         condition: service_healthy
@@ -48,6 +49,14 @@ services:
       - "5173:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:3000
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend-next/app:/app/app
+      - ./frontend-next/lib:/app/lib
+      - ./frontend-next/public:/app/public
+      - ./frontend-next/components:/app/components
+      - ./frontend-next/context:/app/context
     depends_on:
       - backend
     restart: unless-stopped

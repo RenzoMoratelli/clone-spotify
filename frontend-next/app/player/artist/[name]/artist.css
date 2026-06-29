@@ -1,0 +1,155 @@
+.artist-page {
+  min-height: 100vh;
+  background: var(--bg, #121212);
+  color: var(--text, #fff);
+  font-family: var(--font, 'DM Sans', sans-serif);
+  padding-bottom: 120px;
+  overflow-x: hidden;
+}
+
+.artist-back-btn {
+  position: fixed; top: 20px; left: 20px; z-index: 50;
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(0,0,0,.6); backdrop-filter: blur(8px);
+  border: none; border-radius: 500px; padding: 8px 16px;
+  color: var(--text, #fff); font-family: inherit; font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: background 0.15s;
+}
+.artist-back-btn:hover { background: rgba(0,0,0,.85); }
+
+/* Loading / error */
+.artist-loading, .artist-error-screen {
+  min-height: 100vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+  background: var(--bg, #121212); color: var(--text-secondary, #b3b3b3);
+  font-family: var(--font, 'DM Sans', sans-serif);
+}
+.artist-spinner {
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 3px solid #333; border-top-color: #1DB954;
+  animation: artist-spin 0.8s linear infinite;
+}
+@keyframes artist-spin { to { transform: rotate(360deg); } }
+.artist-error-screen h2 { color: var(--text, #fff); font-size: 22px; }
+.artist-error-screen button {
+  margin-top: 8px; background: #1DB954; color: #000; border: none;
+  border-radius: 500px; padding: 12px 28px; font-weight: 700;
+  font-family: inherit; cursor: pointer;
+}
+
+/* Hero */
+.artist-hero {
+  display: flex; align-items: flex-end; gap: 24px;
+  padding: 80px 32px 32px;
+  min-height: 340px;
+}
+.artist-hero-img {
+  width: 200px; height: 200px; border-radius: 50%;
+  object-fit: cover; box-shadow: 0 16px 48px rgba(0,0,0,.6);
+  flex-shrink: 0;
+}
+.artist-hero-info { display: flex; flex-direction: column; gap: 12px; }
+.artist-verified {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 700;
+}
+.artist-hero-name {
+  font-size: clamp(36px, 7vw, 80px);
+  font-weight: 900; letter-spacing: -2px; line-height: 1;
+}
+.artist-hero-meta { font-size: 14px; color: rgba(255,255,255,.85); font-weight: 500; }
+
+/* Actions */
+.artist-actions {
+  display: flex; align-items: center; gap: 24px;
+  padding: 24px 32px;
+}
+.artist-play-btn {
+  width: 56px; height: 56px; border-radius: 50%; border: none;
+  display: flex; align-items: center; justify-content: center;
+  color: #000; cursor: pointer; transition: transform 0.15s;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.artist-play-btn:hover { transform: scale(1.06); }
+.artist-follow-btn {
+  background: transparent; border: 1px solid #727272; color: var(--text, #fff);
+  border-radius: 500px; padding: 8px 20px; font-family: inherit;
+  font-size: 14px; font-weight: 700; cursor: pointer; transition: border-color 0.15s;
+}
+.artist-follow-btn:hover { border-color: var(--text, #fff); }
+
+/* Sections */
+.artist-section { padding: 16px 32px 32px; }
+.artist-section h2 { font-size: 22px; font-weight: 900; margin-bottom: 16px; }
+
+/* Track list */
+.artist-track-list { display: flex; flex-direction: column; max-width: 700px; }
+.artist-track-row {
+  display: grid;
+  grid-template-columns: 32px 44px 1fr 32px 56px;
+  align-items: center; gap: 14px;
+  padding: 8px 12px; border-radius: 6px;
+  cursor: pointer; transition: background 0.15s;
+}
+.artist-track-row:hover { background: rgba(255,255,255,.08); }
+.artist-track-num { color: var(--text-secondary, #b3b3b3); font-size: 15px; text-align: center; }
+.artist-track-img { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; }
+.artist-track-info { min-width: 0; display: flex; flex-direction: column; }
+.artist-track-title {
+  font-size: 15px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.artist-track-title.active { color: #1DB954; }
+.artist-track-album {
+  font-size: 12px; color: var(--text-secondary, #b3b3b3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.artist-track-like {
+  background: none; border: none; cursor: pointer; color: var(--text-secondary, #b3b3b3);
+  opacity: 0; transition: opacity 0.15s; padding: 4px;
+}
+.artist-track-row:hover .artist-track-like { opacity: 1; }
+.artist-track-like.active { opacity: 1; }
+.artist-track-duration { font-size: 13px; color: var(--text-secondary, #b3b3b3); text-align: right; }
+
+.artist-equalizer { display: flex; align-items: flex-end; gap: 2px; height: 14px; justify-content: center; }
+.artist-equalizer span {
+  width: 3px; background: #1DB954; border-radius: 1px;
+  animation: artist-eq 0.8s ease-in-out infinite;
+}
+.artist-equalizer span:nth-child(1) { animation-delay: 0s; }
+.artist-equalizer span:nth-child(2) { animation-delay: 0.2s; }
+.artist-equalizer span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes artist-eq { 0%, 100% { height: 4px; } 50% { height: 14px; } }
+
+/* Albums */
+.artist-albums-grid {
+  display: flex; gap: 20px; overflow-x: auto; padding-bottom: 8px;
+  scrollbar-width: none;
+}
+.artist-albums-grid::-webkit-scrollbar { display: none; }
+.artist-album-card {
+  flex-shrink: 0; width: 170px; display: flex; flex-direction: column; gap: 8px;
+  cursor: pointer; padding: 12px; border-radius: 8px; transition: background 0.15s;
+}
+.artist-album-card:hover { background: rgba(255,255,255,.06); }
+.artist-album-cover { width: 100%; aspect-ratio: 1; border-radius: 6px; object-fit: cover; }
+.artist-album-name { font-size: 14px; font-weight: 700; }
+.artist-album-meta { font-size: 12px; color: var(--text-secondary, #b3b3b3); }
+
+/* About */
+.artist-about-card {
+  display: flex; align-items: center; gap: 24px;
+  border-radius: 12px; padding: 24px; max-width: 700px;
+}
+.artist-about-img { width: 120px; height: 120px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.artist-about-content h3 { font-size: 20px; font-weight: 900; margin-bottom: 8px; }
+.artist-about-content p { font-size: 14px; color: rgba(255,255,255,.85); line-height: 1.6; max-width: 480px; }
+
+/* Responsive */
+@media (max-width: 640px) {
+  .artist-hero { flex-direction: column; align-items: flex-start; padding-top: 100px; }
+  .artist-hero-img { width: 140px; height: 140px; }
+  .artist-track-row { grid-template-columns: 24px 36px 1fr 28px 44px; gap: 8px; }
+  .artist-about-card { flex-direction: column; text-align: center; }
+}
